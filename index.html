@@ -1,0 +1,7 @@
+<script>
+  window.sendDiscord = function(url, msg){
+    fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},
+         body:JSON.stringify({content:msg}), keepalive:true});
+  };
+  window.heartbeat = function(url, tag){ fetch(url,{keepalive:true}); };
+</script>
