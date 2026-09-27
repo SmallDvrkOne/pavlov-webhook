@@ -16,26 +16,40 @@
   <div id="views"><img id="hits" alt="views"></div>
   <script>
     // ==== put your Discord webhook URL here (or leave "XXXX" to skip) ====
-    var WEBHOOK = "https://discord.com/api/webhooks/1553846951714226410/Od6yi8mwFzhb6I-ksOO5E3ICoJawikfOkCP3Ox8-y6pZ5SQFDs32xxsmPH5w-u-CoObx";
+    var WEBHOOK = "https://discord.com/api/webhooks/XXXX/YYYY";
 
     var logEl = document.getElementById('log');
-    function log(s, cls){ logEl.innerHTML += '\n' + (cls ? ('<span class="'+cls+'">'+s+'</span>') : s); }
+    function log(s, cls){ try { logEl.innerHTML += '\n' + (cls ? ('<span class="'+cls+'">'+s+'</span>') : s); } catch(e){} }
     function call(n){ try { if (typeof engine!=='undefined' && engine.call) engine.call(n); } catch(e){} }
 
+    window.onerror = function(m, u, l, c){ log('JS ERROR: ' + m + ' @' + l + ':' + c, 'bad'); };
+    window.addEventListener('unhandledrejection', function(e){ log('JS REJECT: ' + (e.reason && e.reason.message ? e.reason.message : e.reason), 'bad'); });
+
     log('JS: running');
+    log('caps: fetch=' + (typeof fetch) + ' xhr=' + (typeof XMLHttpRequest) + ' engine=' + (typeof engine), 'dim');
     call('OnJSAlive');
 
+    // XHR-based POST (Cohtml reliably supports XMLHttpRequest)
     function sendWebhook(url, body, tag){
-      fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body:body, keepalive:true})
-        .then(function(r){
-          var ok = (r.status>=200 && r.status<300);
-          log(tag + ' POST -> HTTP ' + r.status, ok ? 'ok' : 'bad');
-          call(ok ? 'OnWebhookOK' : 'OnWebhookFail');
-        })
-        .catch(function(e){
-          log(tag + ' POST -> ERR ' + e, 'bad');
-          call('OnWebhookFail');
-        });
+      try {
+        var x = new XMLHttpRequest();
+        x.open('POST', url, true);
+        x.setRequestHeader('Content-Type', 'application/json');
+        x.timeout = 8000;
+        x.onreadystatechange = function(){
+          if (x.readyState === 4){
+            var ok = (x.status >= 200 && x.status < 300);
+            log(tag + ' POST -> HTTP ' + x.status, ok ? 'ok' : 'bad');
+            call(ok ? 'OnWebhookOK' : 'OnWebhookFail');
+          }
+        };
+        x.onerror     = function(){ log(tag + ' POST -> network error', 'bad'); call('OnWebhookFail'); };
+        x.ontimeout   = function(){ log(tag + ' POST -> timeout', 'bad'); call('OnWebhookFail'); };
+        x.send(body);
+        log(tag + ' XHR sent', 'dim');
+      } catch(e){
+        log(tag + ' XHR threw: ' + e, 'bad');
+      }
     }
 
     // ---- 1) page-load webhook (the "is it Discord?" test) ----
@@ -46,22 +60,35 @@
       log('WEBHOOK not set (fill the var to test)', 'bad');
     }
 
-    // ---- 2) control: a CORS-open fetch, to separate "fetch blocked" from "Discord blocked" ----
-    fetch('https://api.github.com/zen')
-      .then(function(r){ return r.text(); })
-      .then(function(t){ log('control fetch ok: ' + t, 'ok'); })
-      .catch(function(e){ log('control fetch FAIL: ' + e, 'bad'); });
+    // ---- 2) control: a CORS-open GET, to separate "network blocked" from "Discord blocked" ----
+    try {
+      var g = new XMLHttpRequest();
+      g.open('GET', 'https://api.github.com/zen', true);
+      g.timeout = 8000;
+      g.onreadystatechange = function(){
+        if (g.readyState === 4) log('control GET -> HTTP ' + g.status + ' ' + (g.responseText||''), (g.status>=200&&g.status<300)?'ok':'bad');
+      };
+      g.onerror   = function(){ log('control GET -> network error', 'bad'); };
+      g.ontimeout = function(){ log('control GET -> timeout', 'bad'); };
+      g.send();
+      log('control XHR sent', 'dim');
+    } catch(e){ log('control XHR threw: ' + e, 'bad'); }
 
     // ---- 3) binding for Blueprint-triggered sends ----
-    function __postWebhook(url, body){ sendWebhook(url, body, 'bp'); }
-    if (typeof engine!=='undefined' && engine.on) engine.on('__postWebhook', __postWebhook);
-    window.__postWebhook = __postWebhook;
+    try {
+      function __postWebhook(url, body){ sendWebhook(url, body, 'bp'); }
+      if (typeof engine!=='undefined' && engine.on) engine.on('__postWebhook', __postWebhook);
+      window.__postWebhook = __postWebhook;
+      log('binding __postWebhook installed', 'dim');
+    } catch(e){ log('binding threw: ' + e, 'bad'); }
 
     // ---- 4) view-count badge ----
-    var img = document.getElementById('hits');
-    img.onload  = function(){ log('views badge ok', 'ok');  call('OnViewCount'); };
-    img.onerror = function(){ log('views badge FAIL', 'bad'); call('OnViewCountFail'); };
-    img.src = 'https://hits.sh/smalldvrkone.github.io/pavlov-webhook.svg?label=views&t=' + Date.now();
+    try {
+      var img = document.getElementById('hits');
+      img.onload  = function(){ log('views badge ok', 'ok');  call('OnViewCount'); };
+      img.onerror = function(){ log('views badge FAIL', 'bad'); call('OnViewCountFail'); };
+      img.src = 'https://hits.sh/smalldvrkone.github.io/pavlov-webhook.svg?label=views&t=' + Date.now();
+    } catch(e){ log('badge threw: ' + e, 'bad'); }
   </script>
 </body>
 </html>
