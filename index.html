@@ -1,23 +1,34 @@
 <!DOCTYPE html>
 <html>
-<head><meta charset="utf-8"><title>relay</title></head>
+<head>
+  <meta charset="utf-8">
+  <title>relay</title>
+  <style>
+    html,body{margin:0;height:100%;background:#111;color:#eee;font-family:sans-serif}
+    #views{position:absolute;left:0;top:0;padding:8px 12px;font-size:28px;font-weight:bold}
+  </style>
+</head>
 <body>
-<script>
-  function __postWebhook(url, body) {
-    fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: body,
-      keepalive: true
-    })
-    .then(function (r) {
-      if (r.status >= 200 && r.status < 300) engine.call('OnWebhookOK');
-      else                                   engine.call('OnWebhookFail');
-    })
-    .catch(function () { engine.call('OnWebhookFail'); });
-  }
-  if (typeof engine !== 'undefined' && engine.on) engine.on('__postWebhook', __postWebhook);
-  window.__postWebhook = __postWebhook;
-</script>
+  <div id="views">views: …</div>
+  <script>
+    function call(n){ try { if (typeof engine!=='undefined' && engine.call) engine.call(n); } catch(e){} }
+    function setViews(t){ var el=document.getElementById('views'); if(el) el.textContent = t; }
+
+    // ---------- event name BP triggers: __postWebhook ----------
+    function __postWebhook(url, body){
+      fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body:body, keepalive:true})
+        .then(function(r){ call((r.status>=200 && r.status<300) ? 'OnWebhookOK' : 'OnWebhookFail'); })
+        .catch(function(){ call('OnWebhookFail'); });
+    }
+    if (typeof engine!=='undefined' && engine.on) engine.on('__postWebhook', __postWebhook);
+    window.__postWebhook = __postWebhook;
+
+    // ---------- view counter ----------
+    var NS='smalldvrkone-pavlov', KEY='relay-views';
+    fetch('https://api.countapi.xyz/hit/'+NS+'/'+KEY)
+      .then(function(r){ return r.json(); })
+      .then(function(d){ setViews('views: '+d.value); call('OnViewCount'); })
+      .catch(function(){ setViews('views: error'); call('OnViewCountFail'); });
+  </script>
 </body>
 </html>
