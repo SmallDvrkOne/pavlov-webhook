@@ -3,16 +3,21 @@
 <head><meta charset="utf-8"><title>relay</title></head>
 <body>
 <script>
-  window.__postWebhook = function (url, body) {
+  function __postWebhook(url, body) {
     fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: body,
       keepalive: true
     })
-    .then(function (r) { engine.call('OnWebhookResult', r.status); })
-    .catch(function () { engine.call('OnWebhookResult', -1); });
-  };
+    .then(function (r) {
+      if (r.status >= 200 && r.status < 300) engine.call('OnWebhookOK');
+      else                                   engine.call('OnWebhookFail');
+    })
+    .catch(function () { engine.call('OnWebhookFail'); });
+  }
+  if (typeof engine !== 'undefined' && engine.on) engine.on('__postWebhook', __postWebhook);
+  window.__postWebhook = __postWebhook;
 </script>
 </body>
 </html>
