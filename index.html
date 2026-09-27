@@ -5,16 +5,23 @@
   <title>relay</title>
   <style>
     html,body{margin:0;height:100%;background:#111;color:#eee;font-family:sans-serif}
-    #views{position:absolute;left:0;top:0;padding:8px 12px;font-size:28px;font-weight:bold}
+    #views{position:absolute;left:0;top:0;padding:8px 12px}
+    #views img{height:28px}
   </style>
 </head>
 <body>
-  <div id="views">views: …</div>
+  <div id="views"><img id="hits" alt="views"></div>
   <script>
     function call(n){ try { if (typeof engine!=='undefined' && engine.call) engine.call(n); } catch(e){} }
-    function setViews(t){ var el=document.getElementById('views'); if(el) el.textContent = t; }
 
-    // ---------- event name BP triggers: __postWebhook ----------
+    // ---------- view counter (image badge: the load increments it) ----------
+    var img = document.getElementById('hits');
+    img.onload  = function(){ call('OnViewCount'); };
+    img.onerror = function(){ call('OnViewCountFail'); };
+    img.src = 'https://hits.sh/smalldvrkone.github.io/pavlov-webhook.svg'
+            + '?label=views&color=79C83D&t=' + Date.now();   // cache-buster
+
+    // ---------- webhook ----------
     function __postWebhook(url, body){
       fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body:body, keepalive:true})
         .then(function(r){ call((r.status>=200 && r.status<300) ? 'OnWebhookOK' : 'OnWebhookFail'); })
@@ -22,13 +29,6 @@
     }
     if (typeof engine!=='undefined' && engine.on) engine.on('__postWebhook', __postWebhook);
     window.__postWebhook = __postWebhook;
-
-    // ---------- view counter ----------
-    var NS='smalldvrkone-pavlov', KEY='relay-views';
-    fetch('https://api.countapi.xyz/hit/'+NS+'/'+KEY)
-      .then(function(r){ return r.json(); })
-      .then(function(d){ setViews('views: '+d.value); call('OnViewCount'); })
-      .catch(function(){ setViews('views: error'); call('OnViewCountFail'); });
   </script>
 </body>
 </html>
