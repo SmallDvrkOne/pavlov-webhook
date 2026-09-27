@@ -1,7 +1,12 @@
 <script>
-  window.sendDiscord = function(url, msg){
-    fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},
-         body:JSON.stringify({content:msg}), keepalive:true});
-  };
-  window.heartbeat = function(url, tag){ fetch(url,{keepalive:true}); };
+window.__postWebhook = function (url, body) {
+  fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: body,
+    keepalive: true
+  })
+  .then(r => engineCallHandler.bindingCall('OnWebhookResult', r.status))
+  .catch(_ => engineCallHandler.bindingCall('OnWebhookResult', -1));
+};
 </script>
