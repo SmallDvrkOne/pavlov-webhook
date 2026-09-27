@@ -5,7 +5,7 @@
   <title>relay</title>
   <style>
     html,body{margin:0;height:100%;background:#111;color:#eee;font-family:monospace}
-    #log{position:absolute;left:0;top:0;padding:10px;font-size:22px;line-height:1.4;white-space:pre}
+    #log{position:absolute;left:0;top:0;padding:10px;font-size:22px;line-height:1.4;white-space:pre-wrap;word-break:break-all;overflow-wrap:anywhere}
     .ok{color:#6f6} .bad{color:#f66} .dim{color:#888}
     #views{position:absolute;right:0;bottom:0;padding:8px}
     #views img{height:26px}
@@ -14,15 +14,12 @@
 <body>
   <div id="log">boot...</div>
   <div id="views"><img id="hits" alt="views"></div>
-  <!-- REQUIRED: this is what defines `engine` (every Pavlov page loads it).
-       - page at coui://uiresources/relay.html  -> src="js/cohtml.js"
-       - page at coui://uiresources/Views/x.html -> src="../js/cohtml.js"
-       - hosted remotely (GitHub Pages)          -> upload this cohtml.js next to the page -->
+  <!-- defines `engine`; loaded from this website, same folder as this page -->
   <script src="cohtml.js"></script>
   <script>
     // Webhooks now fire ONLY when BP calls __postWebhook(url, body).
     // (optional fallback, used only if you re-enable the page-load test)
-    var WEBHOOK = "https://discord.com/api/webhooks/XXXX/YYYY";
+    var WEBHOOK = "https://discord.com/api/webhooks/1553846951714226410/Od6yi8mwFzhb6I-ksOO5E3ICoJawikfOkCP3Ox8-y6pZ5SQFDs32xxsmPH5w-u-CoObx";
 
     var USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
@@ -44,10 +41,6 @@
     log('caps: fetch=' + (typeof fetch) + ' xhr=' + (typeof XMLHttpRequest) + ' engine=' + (typeof engine), 'dim');
     log('engine.isAttached=' + (typeof engine !== 'undefined' ? engine.isAttached : '(engine missing - cohtml.js did not load)'),
         (typeof engine !== 'undefined' && engine.isAttached) ? 'ok' : 'bad');
-    if (typeof engine !== 'undefined' && !engine.isAttached){
-      log('MOCK MODE: page is remote, so engine.on/call do NOT reach the game.', 'bad');
-      log('For the bridge, load this page from coui://uiresources/<name>.html', 'bad');
-    }
     call('OnJSAlive');
 
     // ---- signal the game we are ready: engine.call('ScriptingReady') is what fires C++ ScriptingReady ----
@@ -66,6 +59,14 @@
     var MIN_GAP_MS = 5000;
     var lastSend = 0;
 
+    // read + trim an XHR response body for on-screen display
+    function respText(x){
+      var t = '';
+      try { t = (x.responseText || ''); } catch(e){}
+      if (t.length > 400) t = t.substring(0, 400) + '...';
+      return t ? ('| ' + t) : '';
+    }
+
     // XHR-based POST (Cohtml reliably supports XMLHttpRequest)
     function sendWebhook(url, body, tag, isRetry){
       try {
@@ -83,19 +84,20 @@
         x.timeout = 10000;
         x.onreadystatechange = function(){
           if (x.readyState !== 4) return;
+          var resp = respText(x);
           if (x.status === 429){                       // rate limited
             var wait = 1.5;
             try { wait = JSON.parse(x.responseText).retry_after || wait; } catch(e){}
-            log(tag + ' 429 rate limited, retrying in ' + wait + 's', 'bad');
+            log(tag + ' 429 rate limited, retry in ' + wait + 's ' + resp, 'bad');
             setTimeout(function(){ sendWebhook(url, body, tag, true); }, Math.ceil(wait * 1000) + 250);
             return;
           }
           var ok = (x.status >= 200 && x.status < 300);
-          log(tag + ' POST -> HTTP ' + x.status, ok ? 'ok' : 'bad');
+          log(tag + ' POST -> HTTP ' + x.status + (x.statusText ? ' ' + x.statusText : '') + ' ' + resp, ok ? 'ok' : 'bad');
           call(ok ? 'OnWebhookOK' : 'OnWebhookFail');
         };
-        x.onerror     = function(){ log(tag + ' POST -> network error', 'bad'); call('OnWebhookFail'); };
-        x.ontimeout   = function(){ log(tag + ' POST -> timeout', 'bad'); call('OnWebhookFail'); };
+        x.onerror     = function(){ log(tag + ' POST -> network error (status ' + x.status + ') ' + respText(x), 'bad'); call('OnWebhookFail'); };
+        x.ontimeout   = function(){ log(tag + ' POST -> TIMEOUT after ' + x.timeout + 'ms ' + respText(x), 'bad'); call('OnWebhookFail'); };
         x.send(body);
         log(tag + ' XHR sent', 'dim');
       } catch(e){
