@@ -14,10 +14,15 @@
 <body>
   <div id="log">boot...</div>
   <div id="views"><img id="hits" alt="views"></div>
+  <!-- REQUIRED: this is what defines `engine` (every Pavlov page loads it).
+       - page at coui://uiresources/relay.html  -> src="js/cohtml.js"
+       - page at coui://uiresources/Views/x.html -> src="../js/cohtml.js"
+       - hosted remotely (GitHub Pages)          -> upload this cohtml.js next to the page -->
+  <script src="cohtml.js"></script>
   <script>
     // Webhooks now fire ONLY when BP calls __postWebhook(url, body).
     // (optional fallback, used only if you re-enable the page-load test)
-    var WEBHOOK = "https://discord.com/api/webhooks/1553846951714226410/Od6yi8mwFzhb6I-ksOO5E3ICoJawikfOkCP3Ox8-y6pZ5SQFDs32xxsmPH5w-u-CoObx";
+    var WEBHOOK = "https://discord.com/api/webhooks/XXXX/YYYY";
 
     var USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
@@ -30,7 +35,19 @@
 
     log('JS: running');
     log('caps: fetch=' + (typeof fetch) + ' xhr=' + (typeof XMLHttpRequest) + ' engine=' + (typeof engine), 'dim');
+    log('engine.isAttached=' + (typeof engine !== 'undefined' ? engine.isAttached : '(engine missing - cohtml.js did not load)'),
+        (typeof engine !== 'undefined' && engine.isAttached) ? 'ok' : 'bad');
     call('OnJSAlive');
+
+    // ---- signal the game we are ready: engine.call('ScriptingReady') is what fires C++ ScriptingReady ----
+    if (typeof engine !== 'undefined'){
+      engine.on('Ready', function(){
+        log('engine Ready', 'ok');
+        try { engine.synchronizeModels(); } catch(e){ log('synchronizeModels: ' + e, 'bad'); }
+        engine.call('ScriptingReady');
+        log('called ScriptingReady', 'ok');
+      });
+    }
 
     // local throttle so we never hammer Discord (1 send / 5s)
     var MIN_GAP_MS = 5000;
