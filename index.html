@@ -28,7 +28,14 @@
 
     var logEl = document.getElementById('log');
     function log(s, cls){ try { logEl.innerHTML += '\n' + (cls ? ('<span class="'+cls+'">'+s+'</span>') : s); } catch(e){} }
-    function call(n){ try { if (typeof engine!=='undefined' && engine.call) engine.call(n); } catch(e){} }
+    function call(n){
+      try {
+        if (typeof engine !== 'undefined' && engine.call && engine.isAttached){
+          var p = engine.call(n);
+          if (p && p.catch) p.catch(function(){});   // no RegisterForEvent binding -> ignore
+        }
+      } catch(e){}
+    }
 
     window.onerror = function(m, u, l, c){ log('JS ERROR: ' + m + ' @' + l + ':' + c, 'bad'); };
     window.addEventListener('unhandledrejection', function(e){ log('JS REJECT: ' + (e.reason && e.reason.message ? e.reason.message : e.reason), 'bad'); });
@@ -37,6 +44,10 @@
     log('caps: fetch=' + (typeof fetch) + ' xhr=' + (typeof XMLHttpRequest) + ' engine=' + (typeof engine), 'dim');
     log('engine.isAttached=' + (typeof engine !== 'undefined' ? engine.isAttached : '(engine missing - cohtml.js did not load)'),
         (typeof engine !== 'undefined' && engine.isAttached) ? 'ok' : 'bad');
+    if (typeof engine !== 'undefined' && !engine.isAttached){
+      log('MOCK MODE: page is remote, so engine.on/call do NOT reach the game.', 'bad');
+      log('For the bridge, load this page from coui://uiresources/<name>.html', 'bad');
+    }
     call('OnJSAlive');
 
     // ---- signal the game we are ready: engine.call('ScriptingReady') is what fires C++ ScriptingReady ----
@@ -44,8 +55,10 @@
       engine.on('Ready', function(){
         log('engine Ready', 'ok');
         try { engine.synchronizeModels(); } catch(e){ log('synchronizeModels: ' + e, 'bad'); }
-        engine.call('ScriptingReady');
-        log('called ScriptingReady', 'ok');
+        // 'ScriptingReady' is a name each game actor registers itself. Use our own binding name.
+        var p = engine.call('PageReady');
+        if (p && p.catch) p.catch(function(){ log('PageReady not registered (add RegisterForEvent("PageReady"))', 'dim'); });
+        log('called PageReady', 'ok');
       });
     }
 
@@ -99,19 +112,7 @@
       log('page-load test off (or WEBHOOK unset)', 'dim');
     }
 
-    // ---- 2) control: a CORS-open GET, to separate "network blocked" from "Discord blocked" ----
-    try {
-      var g = new XMLHttpRequest();
-      g.open('GET', 'https://api.github.com/zen', true);
-      g.timeout = 8000;
-      g.onreadystatechange = function(){
-        if (g.readyState === 4) log('control GET -> HTTP ' + g.status + ' ' + (g.responseText||''), (g.status>=200&&g.status<300)?'ok':'bad');
-      };
-      g.onerror   = function(){ log('control GET -> network error', 'bad'); };
-      g.ontimeout = function(){ log('control GET -> timeout', 'bad'); };
-      g.send();
-      log('control XHR sent', 'dim');
-    } catch(e){ log('control XHR threw: ' + e, 'bad'); }
+    // ---- 2) (removed) the api.github.com diagnostic hit GitHub's rate limit ----
 
     // ---- 3) binding for Blueprint-triggered sends ----
     try {
