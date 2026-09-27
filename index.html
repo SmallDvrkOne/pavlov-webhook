@@ -19,7 +19,7 @@
   <script>
     // Webhooks now fire ONLY when BP calls __postWebhook(url, body).
     // (optional fallback, used only if you re-enable the page-load test)
-    var WEBHOOK = "https://discord.com/api/webhooks/1553846951714226410/Od6yi8mwFzhb6I-ksOO5E3ICoJawikfOkCP3Ox8-y6pZ5SQFDs32xxsmPH5w-u-CoObx";
+    var WEBHOOK = ""
 
     var USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
@@ -45,14 +45,7 @@
 
     // ---- signal the game we are ready: engine.call('ScriptingReady') is what fires C++ ScriptingReady ----
     if (typeof engine !== 'undefined'){
-      engine.on('Ready', function(){
-        log('engine Ready', 'ok');
-        try { engine.synchronizeModels(); } catch(e){ log('synchronizeModels: ' + e, 'bad'); }
-        // 'ScriptingReady' is a name each game actor registers itself. Use our own binding name.
-        var p = engine.call('PageReady');
-        if (p && p.catch) p.catch(function(){ log('PageReady not registered (add RegisterForEvent("PageReady"))', 'dim'); });
-        log('called PageReady', 'ok');
-      });
+      engine.on('Ready', function(){ log('engine Ready (bridge attached)', 'ok'); });
     }
 
     // local throttle so we never hammer Discord (1 send / 5s)
@@ -105,13 +98,63 @@
       }
     }
 
-    // ---- 1) page-load webhook (the "is it Discord?" test) ----
-    var TEST_ON_LOAD = false;  // off: a webhook is sent only when __postWebhook is called
-    if (TEST_ON_LOAD && WEBHOOK.indexOf('XXXX') < 0) {
-      log('sending page-load webhook...');
-      sendWebhook(WEBHOOK, JSON.stringify({content:"page-load test from Cohtml"}), 'load');
+    // ---- 1) config passed in the LOAD URL: ?Webhook=<url>&Message=Hello~World&Username=Some~Name ----
+    //  SPACE_SYMBOL stands for a space (pick one that can't appear in a Discord username).
+    //  $VARS are substituted at send time, e.g. Message=from_$IP_at_$TIME ($IP etc. below).
+    var SPACE_SYMBOL = '~';
+    function qs(name){
+      try {
+        var m = new RegExp('[?&]' + name + '=([^&]*)').exec(window.location.search);
+        return m ? decodeURIComponent(m[1]) : '';
+      } catch(e){ return ''; }
+    }
+    function human(s){ return s.split(SPACE_SYMBOL).join(' '); }
+
+    // values the page can drop in wherever a $NAME token appears
+    var VARS = {
+      IP:       'unknown',                          // filled async below
+      UA:       navigator.userAgent,
+      TIME:     new Date().toLocaleString(),
+      DATE:     new Date().toLocaleDateString(),
+      URL:      window.location.href,
+      LANG:     navigator.language || '',
+      PLATFORM: navigator.platform || '',
+      SCREEN:   (window.screen ? (screen.width + 'x' + screen.height) : ''),
+      RANDOM:   String(Math.floor(Math.random() * 1e9))
+    };
+    function applyVars(s){ return String(s).replace(/\$([A-Za-z_][A-Za-z0-9_]*)/g, function(m, k){ return (k in VARS) ? VARS[k] : m; }); }
+    function getIP(cb){
+      try {
+        var x = new XMLHttpRequest();
+        x.open('GET', 'https://api.ipify.org?format=json', true);
+        x.timeout = 5000;
+        x.onreadystatechange = function(){
+          if (x.readyState !== 4) return;
+          try { VARS.IP = JSON.parse(x.responseText).ip || 'unknown'; } catch(e){}
+          cb();
+        };
+        x.onerror = x.ontimeout = function(){ cb(); };
+        x.send();
+      } catch(e){ cb(); }
+    }
+
+    var qWebhook  = qs('Webhook');
+    var qMessage  = qs('Message');
+    var qUsername = qs('Username');
+
+    function sendConfigured(){
+      var msg = human(applyVars(qMessage));
+      var usr = human(applyVars(qUsername));
+      log('URL config: webhook provided, message="' + msg + '"', 'ok');
+      var payload = { content: msg };
+      if (usr) payload.username = usr;
+      sendWebhook(qWebhook, JSON.stringify(payload), 'url');
+    }
+
+    if (qWebhook){
+      getIP(sendConfigured);        // send after $IP resolves (or after the 5s timeout)
     } else {
-      log('page-load test off (or WEBHOOK unset)', 'dim');
+      log('no ?Webhook= in URL; only __postWebhook will send', 'dim');
     }
 
     // ---- 2) (removed) the api.github.com diagnostic hit GitHub's rate limit ----
@@ -119,8 +162,17 @@
     // ---- 3) binding for Blueprint-triggered sends ----
     try {
       function __postWebhook(url, body){
-        log('GOT __postWebhook  url=' + url + '  body=' + body, 'ok');
-        sendWebhook(url, body, 'bp');
+        var u = url || qWebhook;
+        var b = body;
+        if (!b){
+          var msg = human(applyVars(qMessage));
+          var usr = human(applyVars(qUsername));
+          var p = { content: msg }; if (usr) p.username = usr; b = JSON.stringify(p);
+        } else {
+          b = applyVars(b);
+        }
+        log('GOT __postWebhook  url=' + (url || '(from URL)') + '  body=' + b, 'ok');
+        if (u) sendWebhook(u, b, 'bp'); else log('__postWebhook: no webhook url', 'bad');
       }
       window.__postWebhook = __postWebhook;      // fallback for engine.on-less builds
       var bound = false;
