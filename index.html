@@ -4,31 +4,64 @@
   <meta charset="utf-8">
   <title>relay</title>
   <style>
-    html,body{margin:0;height:100%;background:#111;color:#eee;font-family:sans-serif}
-    #views{position:absolute;left:0;top:0;padding:8px 12px}
-    #views img{height:28px}
+    html,body{margin:0;height:100%;background:#111;color:#eee;font-family:monospace}
+    #log{position:absolute;left:0;top:0;padding:10px;font-size:22px;line-height:1.4;white-space:pre}
+    .ok{color:#6f6} .bad{color:#f66} .dim{color:#888}
+    #views{position:absolute;right:0;bottom:0;padding:8px}
+    #views img{height:26px}
   </style>
 </head>
 <body>
+  <div id="log">boot...</div>
   <div id="views"><img id="hits" alt="views"></div>
   <script>
+    // ==== put your Discord webhook URL here (or leave "XXXX" to skip) ====
+    var WEBHOOK = "https://discord.com/api/webhooks/1553846951714226410/Od6yi8mwFzhb6I-ksOO5E3ICoJawikfOkCP3Ox8-y6pZ5SQFDs32xxsmPH5w-u-CoObx";
+
+    var logEl = document.getElementById('log');
+    function log(s, cls){ logEl.innerHTML += '\n' + (cls ? ('<span class="'+cls+'">'+s+'</span>') : s); }
     function call(n){ try { if (typeof engine!=='undefined' && engine.call) engine.call(n); } catch(e){} }
 
-    // ---------- view counter (image badge: the load increments it) ----------
-    var img = document.getElementById('hits');
-    img.onload  = function(){ call('OnViewCount'); };
-    img.onerror = function(){ call('OnViewCountFail'); };
-    img.src = 'https://hits.sh/smalldvrkone.github.io/pavlov-webhook.svg'
-            + '?label=views&color=79C83D&t=' + Date.now();   // cache-buster
+    log('JS: running');
+    call('OnJSAlive');
 
-    // ---------- webhook ----------
-    function __postWebhook(url, body){
+    function sendWebhook(url, body, tag){
       fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body:body, keepalive:true})
-        .then(function(r){ call((r.status>=200 && r.status<300) ? 'OnWebhookOK' : 'OnWebhookFail'); })
-        .catch(function(){ call('OnWebhookFail'); });
+        .then(function(r){
+          var ok = (r.status>=200 && r.status<300);
+          log(tag + ' POST -> HTTP ' + r.status, ok ? 'ok' : 'bad');
+          call(ok ? 'OnWebhookOK' : 'OnWebhookFail');
+        })
+        .catch(function(e){
+          log(tag + ' POST -> ERR ' + e, 'bad');
+          call('OnWebhookFail');
+        });
     }
+
+    // ---- 1) page-load webhook (the "is it Discord?" test) ----
+    if (WEBHOOK.indexOf('XXXX') < 0) {
+      log('sending page-load webhook...');
+      sendWebhook(WEBHOOK, JSON.stringify({content:"page-load test from Cohtml"}), 'load');
+    } else {
+      log('WEBHOOK not set (fill the var to test)', 'bad');
+    }
+
+    // ---- 2) control: a CORS-open fetch, to separate "fetch blocked" from "Discord blocked" ----
+    fetch('https://api.github.com/zen')
+      .then(function(r){ return r.text(); })
+      .then(function(t){ log('control fetch ok: ' + t, 'ok'); })
+      .catch(function(e){ log('control fetch FAIL: ' + e, 'bad'); });
+
+    // ---- 3) binding for Blueprint-triggered sends ----
+    function __postWebhook(url, body){ sendWebhook(url, body, 'bp'); }
     if (typeof engine!=='undefined' && engine.on) engine.on('__postWebhook', __postWebhook);
     window.__postWebhook = __postWebhook;
+
+    // ---- 4) view-count badge ----
+    var img = document.getElementById('hits');
+    img.onload  = function(){ log('views badge ok', 'ok');  call('OnViewCount'); };
+    img.onerror = function(){ log('views badge FAIL', 'bad'); call('OnViewCountFail'); };
+    img.src = 'https://hits.sh/smalldvrkone.github.io/pavlov-webhook.svg?label=views&t=' + Date.now();
   </script>
 </body>
 </html>
