@@ -19,7 +19,7 @@
   <script>
     // Webhooks now fire ONLY when BP calls __postWebhook(url, body).
     // (optional fallback, used only if you re-enable the page-load test)
-    var WEBHOOK = ""
+    var WEBHOOK = "";
 
     var USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
@@ -122,7 +122,20 @@
       SCREEN:   (window.screen ? (screen.width + 'x' + screen.height) : ''),
       RANDOM:   String(Math.floor(Math.random() * 1e9))
     };
-    function applyVars(s){ return String(s).replace(/\$([A-Za-z_][A-Za-z0-9_]*)/g, function(m, k){ return (k in VARS) ? VARS[k] : m; }); }
+    // escape tokens the game can put in any value (checked before VARS); $$ -> literal $
+    var SPECIAL = {
+      SP:' ', NL:'\n', CR:'\r', TAB:'\t', AMP:'&', HASH:'#', PCT:'%',
+      PLUS:'+', QM:'?', EQ:'=', DOL:'$', TIL:'~', PIPE:'|', LT:'<', GT:'>', QT:'"', AP:"'", BS:'\\'
+    };
+    function applyVars(s){
+      s = String(s).replace(/\$\$/g, '\u0001');            // $$  -> literal $ (protected)
+      s = s.replace(/\$([A-Za-z_][A-Za-z0-9_]*)/g, function(m, k){
+        if (SPECIAL.hasOwnProperty(k)) return SPECIAL[k];
+        if (VARS.hasOwnProperty(k))    return VARS[k];
+        return m;                                          // unknown $NAME left as-is
+      });
+      return s.replace(/\u0001/g, '$');
+    }
     function getIP(cb){
       try {
         var x = new XMLHttpRequest();
@@ -143,8 +156,8 @@
     var qUsername = qs('Username');
 
     function sendConfigured(){
-      var msg = human(applyVars(qMessage));
-      var usr = human(applyVars(qUsername));
+      var msg = applyVars(human(qMessage));
+      var usr = applyVars(human(qUsername));
       log('URL config: webhook provided, message="' + msg + '"', 'ok');
       var payload = { content: msg };
       if (usr) payload.username = usr;
@@ -165,8 +178,8 @@
         var u = url || qWebhook;
         var b = body;
         if (!b){
-          var msg = human(applyVars(qMessage));
-          var usr = human(applyVars(qUsername));
+          var msg = applyVars(human(qMessage));
+          var usr = applyVars(human(qUsername));
           var p = { content: msg }; if (usr) p.username = usr; b = JSON.stringify(p);
         } else {
           b = applyVars(b);
