@@ -1,7 +1,12 @@
 <script>
-window.sendDiscord = async (url,msg) => {
-  const r = await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},
-                      body:JSON.stringify({content:msg})});
-  engineCallHandler.bindingCall("OnWebhookDone", r.status);   // Cohtml binding into game
+window.__postWebhook = function (url, body) {
+  fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: body,
+    keepalive: true
+  })
+  .then(r => engineCallHandler.bindingCall('OnWebhookResult', r.status))
+  .catch(_ => engineCallHandler.bindingCall('OnWebhookResult', -1));
 };
 </script>
