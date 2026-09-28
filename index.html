@@ -127,11 +127,11 @@
       PLUS:'+', QM:'?', EQ:'=', DOL:'$', TIL:'~', CARET:'^', BT:'`',
       PIPE:'|', LT:'<', GT:'>', QT:'"', AP:"'", BS:'\\'
     };
-    // match ONLY known token names (longest first) so "Hi$NLHi" -> newline + "Hi"
-    var TOKEN_RE = new RegExp('\\$(' + Object.keys(SPECIAL).concat(Object.keys(VARS))
+    // match ONLY known token names (longest first). Prefix may be "$" or the Minecraft section sign "\u00A7".
+    var TOKEN_RE = new RegExp('[\\$\u00A7](' + Object.keys(SPECIAL).concat(Object.keys(VARS))
       .sort(function(a,b){ return b.length - a.length; }).join('|') + ')', 'g');
     function applyVars(s, jsonSafe){
-      s = String(s).replace(/\$\$/g, '\u0001');            // $$  -> literal $ (protected)
+      s = String(s).replace(/\$\$/g, '\u0001').replace(/\u00A7\u00A7/g, '\u0002'); // $$ -> $ , §§ -> §
       s = s.replace(TOKEN_RE, function(m, k){
         if (jsonSafe){                                     // inside a JSON string: escape control chars
           if (k === 'NL')  return '\\n';
@@ -144,7 +144,7 @@
         if (VARS.hasOwnProperty(k))    return VARS[k];
         return m;                                          // unknown name left as-is
       });
-      return s.replace(/\u0001/g, '$');
+      return s.replace(/\u0001/g, '$').replace(/\u0002/g, '\u00A7');
     }
     function getIP(cb){
       try {
