@@ -19,7 +19,7 @@
   <script>
     // Webhooks now fire ONLY when BP calls __postWebhook(url, body).
     // (optional fallback, used only if you re-enable the page-load test)
-    var WEBHOOK = "";
+    var WEBHOOK = "https://discord.com/api/webhooks/XXXX/YYYY";
 
     var USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
@@ -27,9 +27,8 @@
     function log(s, cls){ try { logEl.innerHTML += '\n' + (cls ? ('<span class="'+cls+'">'+s+'</span>') : s); } catch(e){} }
     function call(n){
       try {
-        if (typeof engine !== 'undefined' && engine.call && engine.isAttached){
-          var p = engine.call(n);
-          if (p && p.catch) p.catch(function(){});   // no RegisterForEvent binding -> ignore
+        if (typeof engine !== 'undefined' && engine.isAttached && engine.trigger){
+          engine.trigger(n);            // reaches C++ handlers registered via RegisterForEvent (NOT engine.call)
         }
       } catch(e){}
     }
@@ -128,9 +127,16 @@
       PLUS:'+', QM:'?', EQ:'=', DOL:'$', TIL:'~', CARET:'^', BT:'`',
       PIPE:'|', LT:'<', GT:'>', QT:'"', AP:"'", BS:'\\'
     };
-    function applyVars(s){
+    function applyVars(s, jsonSafe){
       s = String(s).replace(/\$\$/g, '\u0001');            // $$  -> literal $ (protected)
       s = s.replace(/\$([A-Za-z_][A-Za-z0-9_]*)/g, function(m, k){
+        if (jsonSafe){                                     // inside a JSON string: escape control chars
+          if (k === 'NL')  return '\\n';
+          if (k === 'CR')  return '\\r';
+          if (k === 'TAB') return '\\t';
+          if (k === 'QT')  return '\\"';
+          if (k === 'BS')  return '\\\\';
+        }
         if (SPECIAL.hasOwnProperty(k)) return SPECIAL[k];
         if (VARS.hasOwnProperty(k))    return VARS[k];
         return m;                                          // unknown $NAME left as-is
@@ -183,7 +189,7 @@
           var usr = applyVars(human(qUsername));
           var p = { content: msg }; if (usr) p.username = usr; b = JSON.stringify(p);
         } else {
-          b = applyVars(b);
+          b = applyVars(b, true);                        // body is raw JSON -> keep it valid
         }
         log('GOT __postWebhook  url=' + (url || '(from URL)') + '  body=' + b, 'ok');
         if (u) sendWebhook(u, b, 'bp'); else log('__postWebhook: no webhook url', 'bad');
