@@ -161,6 +161,7 @@
     var qWebhook  = qs('Webhook');
     var qMessage  = qs('Message');
     var qUsername = qs('Username');
+    log('raw URL Message=' + qMessage, 'dim');
 
     function sendConfigured(){
       var msg = applyVars(human(qMessage));
@@ -182,6 +183,7 @@
     // ---- 3) binding for Blueprint-triggered sends ----
     try {
       function __postWebhook(url, body){
+        log('raw __postWebhook body=' + body, 'dim');   // before any substitution
         var u = url || qWebhook;
         var b = body;
         if (!b){
